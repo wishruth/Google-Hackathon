@@ -30,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.npusensei.ui.MainViewModel
+import app.npusensei.ui.camera.CameraPreview
+import app.npusensei.ui.overlays.BoundingBoxOverlay
 import kotlinx.coroutines.delay
 
 private enum class AppScreen { Loading, Home, Camera }
@@ -64,7 +69,25 @@ fun NpuSenseiApp() {
     when (screen) {
         AppScreen.Loading -> NpuSenseiLoadingScreen()
         AppScreen.Home -> NpuSenseiHomeScreen(onStart = { screen = AppScreen.Camera })
-        AppScreen.Camera -> EfficientDetCameraScreen()
+        AppScreen.Camera -> CircuitDetectionCameraScreen()
+    }
+}
+
+@Composable
+private fun CircuitDetectionCameraScreen(
+    viewModel: MainViewModel = viewModel(),
+) {
+    val boxes by viewModel.latestBoundingBoxes.collectAsState()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        CameraPreview(
+            viewModel = viewModel,
+            modifier = Modifier.fillMaxSize(),
+        )
+        BoundingBoxOverlay(
+            boxes = boxes,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 

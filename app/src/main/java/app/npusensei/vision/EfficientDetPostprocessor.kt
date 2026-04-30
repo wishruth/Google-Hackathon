@@ -69,6 +69,8 @@ class EfficientDetPostprocessor(
                 box = RectF(left, top, right, bottom),
                 label = label,
                 confidence = score,
+                sourceWidth = metadata.sourceWidth,
+                sourceHeight = metadata.sourceHeight,
             )
         }
         return detections

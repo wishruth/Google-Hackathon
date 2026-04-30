@@ -7,4 +7,6 @@ data class BoundingBox(
     val height: Float,
     val label: String,
     val confidence: Float,
+    val sourceWidth: Int = 0,
+    val sourceHeight: Int = 0,
 )

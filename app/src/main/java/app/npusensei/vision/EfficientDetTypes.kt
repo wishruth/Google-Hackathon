@@ -7,6 +7,8 @@ data class Detection(
     val box: RectF,
     val label: String,
     val confidence: Float,
+    val sourceWidth: Int,
+    val sourceHeight: Int,
 ) {
     fun toBoundingBox(): BoundingBox = BoundingBox(
         x = box.left,
@@ -15,6 +17,8 @@ data class Detection(
         height = box.height(),
         label = label,
         confidence = confidence,
+        sourceWidth = sourceWidth,
+        sourceHeight = sourceHeight,
     )
 }
 
