@@ -80,6 +80,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.litert)
+    implementation(libs.litertlm.android)
     implementation(project(":litert_npu_runtime_libraries:runtime_strings"))
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
