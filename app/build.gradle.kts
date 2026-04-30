@@ -42,28 +42,32 @@ android {
     }
     androidResources {
         noCompress += "tflite"
+        noCompress += "litertlm"
     }
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += "**/libLiteRt.so"
         }
     }
-    bundle {
-        deviceTargetingConfig = file("device_targeting_configuration.xml")
-        deviceGroup {
-            enableSplit = true
-            defaultGroup = "other"
-        }
-    }
-    dynamicFeatures.addAll(
-        setOf(
-            ":litert_npu_runtime_libraries:qualcomm_runtime_v69",
-            ":litert_npu_runtime_libraries:qualcomm_runtime_v73",
-            ":litert_npu_runtime_libraries:qualcomm_runtime_v75",
-            ":litert_npu_runtime_libraries:qualcomm_runtime_v79",
-            ":litert_npu_runtime_libraries:qualcomm_runtime_v81",
-        ),
-    )
+    // bundle deviceGroup config disabled for debug builds – re-enable for Play release
+    // bundle {
+    //     deviceTargetingConfig = file("device_targeting_configuration.xml")
+    //     deviceGroup {
+    //         enableSplit = true
+    //         defaultGroup = "other"
+    //     }
+    // }
+    // Dynamic feature modules disabled – NPU libs bundled directly in jniLibs
+    // dynamicFeatures.addAll(
+    //     setOf(
+    //         ":litert_npu_runtime_libraries:qualcomm_runtime_v69",
+    //         ":litert_npu_runtime_libraries:qualcomm_runtime_v73",
+    //         ":litert_npu_runtime_libraries:qualcomm_runtime_v75",
+    //         ":litert_npu_runtime_libraries:qualcomm_runtime_v79",
+    //         ":litert_npu_runtime_libraries:qualcomm_runtime_v81",
+    //     ),
+    // )
 }
 
 dependencies {
