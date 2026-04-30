@@ -18,19 +18,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,47 +51,173 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import app.npusensei.ui.MainViewModel
-import app.npusensei.ui.camera.CameraPreview
-import app.npusensei.ui.overlays.BoundingBoxOverlay
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 
-private enum class AppScreen { Loading, Home, Camera }
+private sealed class AppScreen {
+    data object Loading : AppScreen()
+    data object Home : AppScreen()
+    data class Response(val prompt: String) : AppScreen()
+}
 
 @Composable
-fun NpuSenseiApp() {
-    var screen by remember { mutableStateOf(AppScreen.Loading) }
+fun NpuSenseiApp(gemmaEngine: GemmaReasoningEngine) {
+    var screen: AppScreen by remember { mutableStateOf(AppScreen.Loading) }
 
     LaunchedEffect(Unit) {
         delay(1450)
         screen = AppScreen.Home
     }
 
-    when (screen) {
+    when (val current = screen) {
         AppScreen.Loading -> NpuSenseiLoadingScreen()
-        AppScreen.Home -> NpuSenseiHomeScreen(onStart = { screen = AppScreen.Camera })
-        AppScreen.Camera -> CircuitDetectionCameraScreen()
+        AppScreen.Home -> NpuSenseiHomeScreen(
+            onSubmit = { prompt -> screen = AppScreen.Response(prompt) },
+        )
+        is AppScreen.Response -> GemmaResponseScreen(
+            prompt = current.prompt,
+            engine = gemmaEngine,
+            onBack = { screen = AppScreen.Home },
+        )
     }
 }
+
+// ── Gemma Response Screen ───────────────────────────────────────────────
 
 @Composable
-private fun CircuitDetectionCameraScreen(
-    viewModel: MainViewModel = viewModel(),
+private fun GemmaResponseScreen(
+    prompt: String,
+    engine: GemmaReasoningEngine,
+    onBack: () -> Unit,
 ) {
-    val boxes by viewModel.latestBoundingBoxes.collectAsState()
+    var responseText by remember { mutableStateOf("") }
+    var isStreaming by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        CameraPreview(
-            viewModel = viewModel,
-            modifier = Modifier.fillMaxSize(),
-        )
-        BoundingBoxOverlay(
-            boxes = boxes,
-            modifier = Modifier.fillMaxSize(),
-        )
+    LaunchedEffect(prompt) {
+        if (!engine.initialized) {
+            errorMsg = "Engine not ready yet — wait a moment and try again"
+            return@LaunchedEffect
+        }
+
+        engine.sendMessage(prompt)
+            .onStart { isStreaming = true; responseText = "" }
+            .catch { e ->
+                errorMsg = e.message
+                isStreaming = false
+            }
+            .onCompletion { isStreaming = false }
+            .collect { chunk ->
+                responseText += chunk
+            }
+    }
+
+    LaunchedEffect(responseText) {
+        scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .premiumBackground(),
+    ) {
+        CircuitBackground(alpha = 0.05f)
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("NPU-Sensei", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = {
+                        engine.resetConversation()
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.08f),
+                        contentColor = Color.White,
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Text("New Chat", fontSize = 13.sp)
+                }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                color = AccentGreen.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.18f)),
+            ) {
+                Text(
+                    text = prompt,
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(14.dp),
+                )
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(top = 12.dp),
+                color = SurfaceGlass,
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    if (errorMsg != null) {
+                        Text(
+                            text = "Error: $errorMsg",
+                            color = Color(0xFFFF6B6B),
+                            fontSize = 14.sp,
+                        )
+                    } else if (responseText.isEmpty() && isStreaming) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = AccentGreen,
+                                strokeWidth = 2.dp,
+                            )
+                            Text("Thinking...", color = MutedText, fontSize = 14.sp)
+                        }
+                    } else {
+                        Column {
+                            Text(
+                                text = responseText,
+                                color = Color.White.copy(alpha = 0.92f),
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                modifier = Modifier.verticalScroll(scrollState),
+                            )
+                            if (isStreaming) {
+                                Text("...", color = AccentGreen, fontSize = 15.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
+
+// ── Loading Screen ──────────────────────────────────────────────────────
 
 @Composable
 private fun NpuSenseiLoadingScreen() {
@@ -167,8 +295,10 @@ private fun NpuSenseiLoadingScreen() {
     }
 }
 
+// ── Home Screen ─────────────────────────────────────────────────────────
+
 @Composable
-private fun NpuSenseiHomeScreen(onStart: () -> Unit) {
+private fun NpuSenseiHomeScreen(onSubmit: (String) -> Unit) {
     var prompt by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
     val canStart = prompt.trim().isNotEmpty()
@@ -227,7 +357,7 @@ private fun NpuSenseiHomeScreen(onStart: () -> Unit) {
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = "Describe your Raspberry Pi wiring task. I’ll turn it into camera-guided steps.",
+                    text = "Describe your Raspberry Pi wiring task. I'll turn it into camera-guided steps.",
                     color = MutedText,
                     fontSize = 16.sp,
                     lineHeight = 23.sp,
@@ -269,7 +399,7 @@ private fun NpuSenseiHomeScreen(onStart: () -> Unit) {
                             onGo = {
                                 if (canStart) {
                                     keyboardController?.hide()
-                                    onStart()
+                                    onSubmit(prompt.trim())
                                 }
                             },
                         ),
@@ -277,7 +407,7 @@ private fun NpuSenseiHomeScreen(onStart: () -> Unit) {
                     Button(
                         onClick = {
                             keyboardController?.hide()
-                            onStart()
+                            onSubmit(prompt.trim())
                         },
                         enabled = canStart,
                         modifier = Modifier
@@ -292,7 +422,7 @@ private fun NpuSenseiHomeScreen(onStart: () -> Unit) {
                         ),
                     ) {
                         Text(
-                            text = "Start AR Guidance",
+                            text = "Ask NPU Sensei",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                         )
@@ -302,6 +432,8 @@ private fun NpuSenseiHomeScreen(onStart: () -> Unit) {
         }
     }
 }
+
+// ── Decorative components ───────────────────────────────────────────────
 
 @Composable
 private fun CircuitHeroMark() {
@@ -376,7 +508,6 @@ private fun Modifier.premiumBackground(): Modifier {
     )
 }
 
-private val AppBackground = Color(0xFF050708)
 private val SurfaceGlass = Color(0xFF11181C).copy(alpha = 0.72f)
 private val MutedText = Color.White.copy(alpha = 0.62f)
 private val AccentGreen = Color(0xFF00FF88)
