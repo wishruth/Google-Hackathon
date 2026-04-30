@@ -46,6 +46,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            pickFirst("**/libLiteRt.so")
         }
     }
     bundle {
