@@ -37,10 +37,9 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
     private val container = app as NpuSenseiApplication
     private val stepEngine = StepEngine()
     private val coachMutex = Mutex()
-    private var lastCoachAt: Long = 0L
-    private var lastCoachedStep: Int = -1
     private var readySince: Long = 0L
     private var coachJob: Job? = null
+    private var lastGemmaStep: Int = -1
 
     val analyzer: FrameAnalyzer = FrameAnalyzer(container.detector)
 
@@ -87,13 +86,14 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectBlueprint(bp: CircuitBlueprint) {
         readySince = 0L
-        lastCoachedStep = -1
+        lastGemmaStep = -1
         _uiState.update {
             it.copy(
                 blueprint = bp,
                 stepIndex = 0,
+                startedAtMs = System.currentTimeMillis(),
                 breadboardMapper = bp.breadboardGeometry?.let { g -> BreadboardMapper(g) },
-                coachText = "Loaded: ${bp.title}. Step 1: ${bp.steps.firstOrNull()?.instruction.orEmpty()}",
+                coachText = "Tap the ask button to get coaching help.",
                 coachSource = null,
             )
         }
@@ -104,7 +104,6 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             val bp = state.blueprint ?: return@update state
             val next = (state.stepIndex + 1).coerceAtMost(bp.steps.lastIndex)
             readySince = 0L
-            lastCoachedStep = -1
             state.copy(stepIndex = next, status = StepStatus.WaitingFor(emptyList()))
         }
     }
@@ -113,7 +112,6 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.update { state ->
             val next = (state.stepIndex - 1).coerceAtLeast(0)
             readySince = 0L
-            lastCoachedStep = -1
             state.copy(stepIndex = next, status = StepStatus.WaitingFor(emptyList()))
         }
     }
@@ -142,8 +140,6 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             if (now - readySince >= StepEngine.READY_HOLD_MS) {
                 readySince = 0L
                 _uiState.update { it.copy(status = StepStatus.Complete) }
-                runCoach(bp, step, StepStatus.Complete, scene, frame = null)
-                if (state.stepIndex < bp.steps.lastIndex) nextStep()
                 return
             }
         } else {
@@ -151,15 +147,6 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _uiState.update { it.copy(status = newStatus) }
-
-        val stepChanged = lastCoachedStep != state.stepIndex
-        val periodElapsed = now - lastCoachAt > COACH_PERIOD_MS
-        val statusInteresting = newStatus !is StepStatus.Ready
-        if ((stepChanged || (periodElapsed && statusInteresting))) {
-            runCoach(bp, step, newStatus, scene, frame = null)
-            lastCoachedStep = state.stepIndex
-            lastCoachAt = now
-        }
     }
 
     private fun runCoach(
@@ -182,13 +169,18 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        val currentStep = _uiState.value.stepIndex
+
         coachJob?.cancel()
         coachJob = viewModelScope.launch(Dispatchers.IO) {
             coachMutex.withLock {
                 _uiState.update { it.copy(coachThinking = true) }
                 try {
-                    engine.resetConversation()
-                    engine.startConversation(PromptBuilder.SYSTEM_PROMPT)
+                    if (lastGemmaStep != currentStep) {
+                        engine.resetConversation()
+                        engine.startConversation(PromptBuilder.SYSTEM_PROMPT)
+                        lastGemmaStep = currentStep
+                    }
 
                     val prompt = PromptBuilder.buildUserPrompt(
                         blueprint, step, status, scene, userQuestion,
@@ -241,8 +233,6 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "CoachViewModel"
-        private const val COACH_PERIOD_MS = 6_000L
-
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(
@@ -269,7 +259,13 @@ data class CoachUiState(
     val breadboardMapper: BreadboardMapper? = null,
     val highlightPx: android.graphics.PointF? = null,
     val highlightBox: android.graphics.RectF? = null,
+    val startedAtMs: Long = 0L,
 ) {
     val currentStep: BlueprintStep?
         get() = blueprint?.steps?.getOrNull(stepIndex)
+
+    val circuitComplete: Boolean
+        get() = blueprint != null
+            && stepIndex == blueprint.steps.lastIndex
+            && status == StepStatus.Complete
 }

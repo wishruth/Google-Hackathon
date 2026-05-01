@@ -5,16 +5,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,40 +56,45 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
 
     Surface(
         Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        color = Color.White,
     ) {
         Column(
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(top = 48.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                AssetLogo(
-                    assetName = "logo-transparent.png",
-                    modifier = Modifier.size(44.dp),
-                )
-                Column {
-                    Text(
-                        "Circuit Coach",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-            }
-
-            Text(
-                "Pick a project. The coach will guide you through it step by step.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge,
+            AssetLogo(
+                assetName = "logo-transparent.png",
+                modifier = Modifier.size(36.dp),
             )
 
+            Spacer(Modifier.height(28.dp))
+
+            Text(
+                "Choose a project",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.W600,
+                color = Color(0xFF1A1A1A),
+                letterSpacing = (-0.4).sp,
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                "We'll guide you through it step by step.",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.W400,
+                color = Color(0xFF999999),
+                letterSpacing = 0.sp,
+            )
+
+            Spacer(Modifier.height(32.dp))
+
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 items(blueprints) { bp ->
@@ -94,12 +105,13 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(top = 32.dp),
+                                .padding(top = 40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                "No blueprints found in assets/blueprints/",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                "No blueprints found",
+                                color = Color(0xFFBBBBBB),
+                                fontSize = 14.sp,
                             )
                         }
                     }
@@ -113,31 +125,49 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
 private fun BlueprintCard(bp: CircuitBlueprint, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White,
-        ),
-        border = BorderStroke(1.dp, Color(0xFFE8EDE9)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFECECEC)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                bp.title,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                bp.summary,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                "${bp.steps.size} steps · ${bp.estimatedMinutes} min · ${bp.difficulty}",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge,
-                fontSize = 13.sp,
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    bp.title,
+                    fontWeight = FontWeight.W500,
+                    fontSize = 16.sp,
+                    color = Color(0xFF1A1A1A),
+                    letterSpacing = (-0.2).sp,
+                )
+                Text(
+                    bp.summary,
+                    fontSize = 13.sp,
+                    color = Color(0xFF999999),
+                    lineHeight = 18.sp,
+                )
+                Text(
+                    "${bp.steps.size} steps  ·  ${bp.estimatedMinutes} min  ·  ${bp.difficulty}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.W500,
+                    color = Color(0xFF34A853),
+                    letterSpacing = 0.2.sp,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = Color(0xFFCCCCCC),
+                modifier = Modifier.size(18.dp),
             )
         }
     }
