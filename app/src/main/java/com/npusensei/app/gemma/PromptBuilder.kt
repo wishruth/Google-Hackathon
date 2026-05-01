@@ -18,6 +18,9 @@ RULES:
 - If the user is stuck or makes a mistake, point out the specific component and
   the specific row/pin to fix. Never lecture.
 - If you don't know something for sure, say so and propose what to look at next.
+- If VISIBLE ON CAMERA says "(nothing recognized yet)", tell the user to move
+  their phone so the components are in frame. Be friendly and specific about
+  what you need to see for the current step.
 - Never include code unless explicitly asked.
 """.trimIndent()
 
