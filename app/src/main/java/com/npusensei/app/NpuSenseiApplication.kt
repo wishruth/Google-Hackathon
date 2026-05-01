@@ -3,12 +3,16 @@ package com.npusensei.app
 import android.app.Application
 import android.util.Log
 import com.npusensei.app.circuit.BlueprintRepository
-import com.npusensei.app.gemma.GemmaCoach
-import com.npusensei.app.gemma.GemmaOnDevice
-import com.npusensei.app.gemma.OfflineTemplateCoach
+import com.npusensei.app.gemma.PromptBuilder
 import com.npusensei.app.ml.ObjectDetector
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class NpuSenseiApplication : Application() {
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val blueprints by lazy { BlueprintRepository(this) }
 
@@ -21,21 +25,33 @@ class NpuSenseiApplication : Application() {
         }
     }
 
-    val coach: GemmaCoach by lazy {
-        runCatching {
-            val file = GemmaOnDevice.resolveModelFile(this)
-                ?: error("no model file")
-            GemmaOnDevice(this, file)
-        }.getOrElse { onDeviceErr ->
-            Log.w(TAG, "On-device Gemma unavailable: ${onDeviceErr.message}; using offline templates")
-            OfflineTemplateCoach()
+    val gemmaEngine: GemmaReasoningEngine by lazy { GemmaReasoningEngine(this) }
+
+    @Volatile
+    var gemmaReady: Boolean = false
+        private set
+
+    fun initGemmaAsync() {
+        appScope.launch {
+            val config = GemmaModelConfig.bestAvailable(this@NpuSenseiApplication)
+                ?: GemmaModelConfig.GEMMA4_E2B_NPU
+            Log.i(TAG, "Initializing Gemma: ${config.name}")
+            val result = gemmaEngine.initialize(config)
+            result.fold(
+                onSuccess = {
+                    Log.i(TAG, "Gemma ready on ${it.activeBackend} in ${it.initTimeMs}ms")
+                    gemmaEngine.startConversation(PromptBuilder.SYSTEM_PROMPT)
+                    gemmaReady = true
+                },
+                onFailure = { Log.e(TAG, "Gemma init failed: ${it.message}") },
+            )
         }
     }
 
     override fun onTerminate() {
         super.onTerminate()
         runCatching { detector.close() }
-        runCatching { coach.close() }
+        runCatching { gemmaEngine.cleanup() }
     }
 
     companion object {

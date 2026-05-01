@@ -14,8 +14,6 @@ import com.npusensei.app.circuit.BreadboardMapper
 import com.npusensei.app.circuit.CircuitBlueprint
 import com.npusensei.app.circuit.StepEngine
 import com.npusensei.app.circuit.StepStatus
-import com.npusensei.app.gemma.CoachRequest
-import com.npusensei.app.gemma.CoachResponse
 import com.npusensei.app.gemma.PromptBuilder
 import com.npusensei.app.ml.SceneState
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
@@ -159,25 +158,51 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         frame: Bitmap?,
         userQuestion: String? = null,
     ) {
+        val engine = container.gemmaEngine
+        if (!engine.initialized) {
+            _uiState.update {
+                it.copy(
+                    coachText = "Gemma is still loading — hang tight…",
+                    coachSource = CoachSource.LITERT_LM,
+                    coachThinking = true,
+                )
+            }
+            return
+        }
+
         coachJob?.cancel()
         coachJob = viewModelScope.launch(Dispatchers.IO) {
             coachMutex.withLock {
                 _uiState.update { it.copy(coachThinking = true) }
                 try {
-                    val resp: CoachResponse = container.coach.coach(
-                        CoachRequest(
-                            systemPrompt = PromptBuilder.SYSTEM_PROMPT,
-                            userPrompt = PromptBuilder.buildUserPrompt(
-                                blueprint, step, status, scene, userQuestion,
-                            ),
-                            frame = frame,
-                        ),
+                    val prompt = PromptBuilder.buildUserPrompt(
+                        blueprint, step, status, scene, userQuestion,
                     )
+                    val started = System.currentTimeMillis()
+                    val chunks = mutableListOf<String>()
+
+                    engine.sendMessage(prompt)
+                        .catch { e ->
+                            Log.e(TAG, "Gemma stream error", e)
+                            chunks.add("(error: ${e.message})")
+                        }
+                        .collect { chunk ->
+                            chunks.add(chunk)
+                            _uiState.update {
+                                it.copy(
+                                    coachText = chunks.joinToString(""),
+                                    coachSource = CoachSource.LITERT_LM,
+                                    coachThinking = true,
+                                )
+                            }
+                        }
+
+                    val elapsed = System.currentTimeMillis() - started
                     _uiState.update {
                         it.copy(
-                            coachText = resp.text,
-                            coachSource = resp.source,
-                            coachLatencyMs = resp.latencyMs,
+                            coachText = chunks.joinToString("").ifBlank { "…" },
+                            coachSource = CoachSource.LITERT_LM,
+                            coachLatencyMs = elapsed,
                             coachThinking = false,
                         )
                     }
@@ -216,12 +241,14 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
+enum class CoachSource { LITERT_LM }
+
 data class CoachUiState(
     val blueprint: CircuitBlueprint? = null,
     val stepIndex: Int = 0,
     val status: StepStatus = StepStatus.WaitingFor(emptyList()),
     val coachText: String = "",
-    val coachSource: CoachResponse.Source? = null,
+    val coachSource: CoachSource? = null,
     val coachLatencyMs: Long = 0L,
     val coachThinking: Boolean = false,
     val breadboardMapper: BreadboardMapper? = null,

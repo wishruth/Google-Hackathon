@@ -1,11 +1,15 @@
 package com.npusensei.app.ui.home
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,9 +26,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.npusensei.app.AssetLogo
 import com.npusensei.app.circuit.BlueprintRepository
 import com.npusensei.app.circuit.CircuitBlueprint
 import kotlinx.coroutines.Dispatchers
@@ -41,22 +48,40 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(
+        Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
         Column(
             Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                "Circuit Coach",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AssetLogo(
+                    assetName = "logo-transparent.png",
+                    modifier = Modifier.size(44.dp),
+                )
+                Column {
+                    Text(
+                        "Circuit Coach",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+            }
+
             Text(
                 "Pick a project. The coach will guide you through it step by step.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge,
             )
+
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -88,13 +113,15 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
 private fun BlueprintCard(bp: CircuitBlueprint, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = Color.White,
         ),
+        border = BorderStroke(1.dp, Color(0xFFE8EDE9)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 bp.title,
                 fontWeight = FontWeight.SemiBold,
@@ -110,6 +137,7 @@ private fun BlueprintCard(bp: CircuitBlueprint, onClick: () -> Unit) {
                 "${bp.steps.size} steps · ${bp.estimatedMinutes} min · ${bp.difficulty}",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelLarge,
+                fontSize = 13.sp,
             )
         }
     }

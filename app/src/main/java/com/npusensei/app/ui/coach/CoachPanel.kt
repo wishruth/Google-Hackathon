@@ -3,6 +3,7 @@ package com.npusensei.app.ui.coach
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,13 +16,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,9 +35,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.npusensei.app.circuit.StepStatus
-import com.npusensei.app.gemma.CoachResponse
+import com.npusensei.app.viewmodel.CoachSource
 import com.npusensei.app.viewmodel.CoachUiState
+
+private val GlassWhite = Color.White.copy(alpha = 0.88f)
+private val GlassStroke = Color.White.copy(alpha = 0.92f)
+private val PrimaryText = Color(0xFF1A1A2E)
+private val MutedText = Color(0xFF6B7B75)
 
 @Composable
 fun CoachPanel(
@@ -49,18 +57,23 @@ fun CoachPanel(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        tonalElevation = 8.dp,
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .clip(RoundedCornerShape(28.dp)),
+        color = GlassWhite,
+        shape = RoundedCornerShape(28.dp),
+        border = BorderStroke(1.dp, GlassStroke),
+        shadowElevation = 16.dp,
+        tonalElevation = 0.dp,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (bp == null) {
                 Text(
                     text = "Loading blueprint…",
                     style = MaterialTheme.typography.bodyLarge,
+                    color = MutedText,
                 )
                 return@Surface
             }
@@ -72,7 +85,7 @@ fun CoachPanel(
                 Text(
                     text = bp.title,
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = PrimaryText,
                     modifier = Modifier.weight(1f),
                 )
                 StatusChip(state.status)
@@ -86,13 +99,14 @@ fun CoachPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                color = Color(0xFF009E5E),
+                trackColor = Color(0xFFE6EFEA),
             )
             Text(
                 "Step ${state.stepIndex + 1} of ${bp.steps.size}",
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MutedText,
+                fontSize = 13.sp,
             )
 
             state.currentStep?.let { step ->
@@ -100,6 +114,7 @@ fun CoachPanel(
                     text = step.instruction,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
+                    color = PrimaryText,
                 )
             }
 
@@ -107,8 +122,8 @@ fun CoachPanel(
                 Modifier
                     .fillMaxWidth()
                     .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(12.dp),
+                        Color(0xFFF0F4F2),
+                        RoundedCornerShape(14.dp),
                     )
                     .padding(12.dp),
             ) {
@@ -122,14 +137,16 @@ fun CoachPanel(
                         exit = fadeOut(),
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
+                            color = Color(0xFF009E5E),
                         )
                     }
                     Text(
                         text = state.coachText.ifBlank { "Watching your workspace…" },
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = PrimaryText,
+                        fontSize = 14.sp,
                     )
                 }
             }
@@ -140,17 +157,31 @@ fun CoachPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onPrev, enabled = state.stepIndex > 0) {
-                    Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous step")
+                    Icon(
+                        Icons.Filled.ChevronLeft,
+                        contentDescription = "Previous step",
+                        tint = PrimaryText,
+                    )
                 }
-                FilledIconButton(onClick = onAsk) {
-                    Icon(Icons.Filled.Mic, contentDescription = "Ask coach")
+                FilledIconButton(
+                    onClick = onAsk,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color(0xFF009E5E),
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Icon(Icons.Filled.QuestionMark, contentDescription = "Ask coach")
                 }
                 Box(Modifier.weight(1f))
                 IconButton(
                     onClick = onNext,
                     enabled = state.stepIndex < (bp.steps.size - 1),
                 ) {
-                    Icon(Icons.Filled.ChevronRight, contentDescription = "Next step")
+                    Icon(
+                        Icons.Filled.ChevronRight,
+                        contentDescription = "Next step",
+                        tint = PrimaryText,
+                    )
                 }
             }
         }
@@ -160,34 +191,33 @@ fun CoachPanel(
 @Composable
 private fun StatusChip(status: StepStatus) {
     val (label, color) = when (status) {
-        is StepStatus.WaitingFor -> "Waiting" to Color(0xFFB7B7BC)
+        is StepStatus.WaitingFor -> "Waiting" to Color(0xFF9CA3AF)
         is StepStatus.Misplaced -> "Adjust" to Color(0xFFFF8A65)
-        is StepStatus.WrongValue -> "Wrong value" to Color(0xFFFF4D4D)
-        StepStatus.Ready -> "Ready" to Color(0xFFFFD400)
-        StepStatus.Complete -> "Done" to Color(0xFF4DCEA0)
+        is StepStatus.WrongValue -> "Wrong value" to Color(0xFFEF4444)
+        StepStatus.Ready -> "Ready" to Color(0xFFF59E0B)
+        StepStatus.Complete -> "Done" to Color(0xFF009E5E)
     }
     AssistChip(
         onClick = {},
-        label = { Text(label) },
+        label = { Text(label, fontSize = 12.sp) },
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = color.copy(alpha = 0.2f),
+            containerColor = color.copy(alpha = 0.12f),
             labelColor = color,
         ),
     )
 }
 
 @Composable
-private fun SourceChip(source: CoachResponse.Source) {
+private fun SourceChip(source: CoachSource) {
     val label = when (source) {
-        CoachResponse.Source.ON_DEVICE -> "Gemma 3n"
-        CoachResponse.Source.OFFLINE_TEMPLATE -> "Offline"
+        CoachSource.LITERT_LM -> "Gemma 4"
     }
     AssistChip(
         onClick = {},
-        label = { Text(label) },
+        label = { Text(label, fontSize = 12.sp) },
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-            labelColor = MaterialTheme.colorScheme.primary,
+            containerColor = Color(0xFF009E5E).copy(alpha = 0.1f),
+            labelColor = Color(0xFF009E5E),
         ),
     )
 }
