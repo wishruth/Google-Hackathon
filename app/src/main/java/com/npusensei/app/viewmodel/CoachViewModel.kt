@@ -1,0 +1,233 @@
+package com.npusensei.app.viewmodel
+
+import android.app.Application
+import android.graphics.Bitmap
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
+import com.npusensei.app.NpuSenseiApplication
+import com.npusensei.app.camera.FrameAnalyzer
+import com.npusensei.app.circuit.BlueprintStep
+import com.npusensei.app.circuit.BreadboardMapper
+import com.npusensei.app.circuit.CircuitBlueprint
+import com.npusensei.app.circuit.StepEngine
+import com.npusensei.app.circuit.StepStatus
+import com.npusensei.app.gemma.CoachRequest
+import com.npusensei.app.gemma.CoachResponse
+import com.npusensei.app.gemma.PromptBuilder
+import com.npusensei.app.ml.SceneState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+class CoachViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val container = app as NpuSenseiApplication
+    private val stepEngine = StepEngine()
+    private val coachMutex = Mutex()
+    private var lastCoachAt: Long = 0L
+    private var lastCoachedStep: Int = -1
+    private var readySince: Long = 0L
+    private var coachJob: Job? = null
+
+    val analyzer: FrameAnalyzer = FrameAnalyzer(container.detector)
+
+    private val _uiState = MutableStateFlow(CoachUiState())
+    val uiState: StateFlow<CoachUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val first = withContext(Dispatchers.IO) {
+                container.blueprints.loadAll().firstOrNull()
+            }
+            if (first != null) selectBlueprint(first)
+        }
+
+        analyzer.scene
+            .onEach(::onSceneChanged)
+            .launchIn(viewModelScope)
+
+        combine(analyzer.liveDetections, _uiState) { dets, ui -> dets to ui }
+            .distinctUntilChanged()
+            .onEach { (dets, ui) ->
+                val mapper = ui.breadboardMapper ?: return@onEach
+                val bb = dets.firstOrNull { it.label == "breadboard" } ?: return@onEach
+                val step = ui.currentStep ?: return@onEach
+                val highlight = step.highlight ?: return@onEach
+                if (highlight.type == "hole" && highlight.row != null && highlight.col != null) {
+                    val center = mapper.holeCenter(bb.box, highlight.row, highlight.col)
+                    _uiState.update { it.copy(highlightPx = center) }
+                } else if (highlight.type == "component" && highlight.target != null) {
+                    val target = dets.firstOrNull { it.label == highlight.target }
+                    _uiState.update { it.copy(highlightBox = target?.box) }
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    fun selectBlueprint(bp: CircuitBlueprint) {
+        readySince = 0L
+        lastCoachedStep = -1
+        _uiState.update {
+            it.copy(
+                blueprint = bp,
+                stepIndex = 0,
+                breadboardMapper = bp.breadboardGeometry?.let { g -> BreadboardMapper(g) },
+                coachText = "Loaded: ${bp.title}. Step 1: ${bp.steps.firstOrNull()?.instruction.orEmpty()}",
+                coachSource = null,
+            )
+        }
+    }
+
+    fun nextStep() {
+        _uiState.update { state ->
+            val bp = state.blueprint ?: return@update state
+            val next = (state.stepIndex + 1).coerceAtMost(bp.steps.lastIndex)
+            readySince = 0L
+            lastCoachedStep = -1
+            state.copy(stepIndex = next, status = StepStatus.WaitingFor(emptyList()))
+        }
+    }
+
+    fun previousStep() {
+        _uiState.update { state ->
+            val next = (state.stepIndex - 1).coerceAtLeast(0)
+            readySince = 0L
+            lastCoachedStep = -1
+            state.copy(stepIndex = next, status = StepStatus.WaitingFor(emptyList()))
+        }
+    }
+
+    fun askCoach(question: String, frame: Bitmap? = null) {
+        val state = _uiState.value
+        val step = state.currentStep ?: return
+        val bp = state.blueprint ?: return
+        runCoach(bp, step, state.status, analyzer.scene.value, frame, userQuestion = question)
+    }
+
+    private fun onSceneChanged(scene: SceneState) {
+        val state = _uiState.value
+        val bp = state.blueprint ?: return
+        val step = state.currentStep ?: return
+
+        val newStatus = stepEngine.evaluate(step, scene)
+        val now = System.currentTimeMillis()
+
+        if (newStatus == StepStatus.Ready) {
+            if (readySince == 0L) readySince = now
+            if (now - readySince >= StepEngine.READY_HOLD_MS) {
+                readySince = 0L
+                _uiState.update { it.copy(status = StepStatus.Complete) }
+                runCoach(bp, step, StepStatus.Complete, scene, frame = null)
+                if (state.stepIndex < bp.steps.lastIndex) nextStep()
+                return
+            }
+        } else {
+            readySince = 0L
+        }
+
+        _uiState.update { it.copy(status = newStatus) }
+
+        val stepChanged = lastCoachedStep != state.stepIndex
+        val periodElapsed = now - lastCoachAt > COACH_PERIOD_MS
+        val statusInteresting = newStatus !is StepStatus.Ready
+        if ((stepChanged || (periodElapsed && statusInteresting))) {
+            runCoach(bp, step, newStatus, scene, frame = null)
+            lastCoachedStep = state.stepIndex
+            lastCoachAt = now
+        }
+    }
+
+    private fun runCoach(
+        blueprint: CircuitBlueprint,
+        step: BlueprintStep,
+        status: StepStatus,
+        scene: SceneState,
+        frame: Bitmap?,
+        userQuestion: String? = null,
+    ) {
+        coachJob?.cancel()
+        coachJob = viewModelScope.launch(Dispatchers.IO) {
+            coachMutex.withLock {
+                _uiState.update { it.copy(coachThinking = true) }
+                try {
+                    val resp: CoachResponse = container.coach.coach(
+                        CoachRequest(
+                            systemPrompt = PromptBuilder.SYSTEM_PROMPT,
+                            userPrompt = PromptBuilder.buildUserPrompt(
+                                blueprint, step, status, scene, userQuestion,
+                            ),
+                            frame = frame,
+                        ),
+                    )
+                    _uiState.update {
+                        it.copy(
+                            coachText = resp.text,
+                            coachSource = resp.source,
+                            coachLatencyMs = resp.latencyMs,
+                            coachThinking = false,
+                        )
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Coach call failed", t)
+                    _uiState.update {
+                        it.copy(
+                            coachText = "(coach unavailable — ${t.message ?: "error"})",
+                            coachThinking = false,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        coachJob?.cancel()
+    }
+
+    companion object {
+        private const val TAG = "CoachViewModel"
+        private const val COACH_PERIOD_MS = 6_000L
+
+        val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(
+                modelClass: Class<T>, extras: CreationExtras,
+            ): T {
+                val app = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
+                    as Application
+                return CoachViewModel(app) as T
+            }
+        }
+    }
+}
+
+data class CoachUiState(
+    val blueprint: CircuitBlueprint? = null,
+    val stepIndex: Int = 0,
+    val status: StepStatus = StepStatus.WaitingFor(emptyList()),
+    val coachText: String = "",
+    val coachSource: CoachResponse.Source? = null,
+    val coachLatencyMs: Long = 0L,
+    val coachThinking: Boolean = false,
+    val breadboardMapper: BreadboardMapper? = null,
+    val highlightPx: android.graphics.PointF? = null,
+    val highlightBox: android.graphics.RectF? = null,
+) {
+    val currentStep: BlueprintStep?
+        get() = blueprint?.steps?.getOrNull(stepIndex)
+}

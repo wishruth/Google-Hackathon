@@ -5,8 +5,16 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.npusensei.app.ui.camera.CoachCameraScreen
+import com.npusensei.app.ui.home.CoachHomeScreen
 import com.npusensei.app.ui.theme.NPUSenseiTheme
+import com.npusensei.app.viewmodel.CoachViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -34,7 +42,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             NPUSenseiTheme {
-                NpuSenseiApp(gemmaEngine = gemmaEngine)
+                var route by remember { mutableStateOf<AppRoute>(AppRoute.CoachHome) }
+                val coachVm: CoachViewModel = viewModel(factory = CoachViewModel.Factory)
+
+                when (route) {
+                    AppRoute.CoachHome -> CoachHomeScreen(onPick = { bp ->
+                        coachVm.selectBlueprint(bp)
+                        route = AppRoute.CoachCamera
+                    })
+                    AppRoute.CoachCamera -> CoachCameraScreen(viewModel = coachVm)
+                    AppRoute.LegacyGemma -> NpuSenseiApp(gemmaEngine = gemmaEngine)
+                }
             }
         }
     }
@@ -47,4 +65,10 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "NPUSensei"
     }
+}
+
+private sealed interface AppRoute {
+    data object CoachHome : AppRoute
+    data object CoachCamera : AppRoute
+    data object LegacyGemma : AppRoute
 }
