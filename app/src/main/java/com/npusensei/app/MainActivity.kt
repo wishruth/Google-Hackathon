@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.npusensei.app.ui.benchmark.BenchmarkScreen
 import com.npusensei.app.ui.camera.CoachCameraScreen
 import com.npusensei.app.ui.home.CoachHomeScreen
 import com.npusensei.app.ui.theme.NPUSenseiTheme
@@ -81,10 +82,16 @@ class MainActivity : ComponentActivity() {
 
                 when (route) {
                     AppRoute.Splash -> StartupLogoScreen()
-                    AppRoute.CoachHome -> CoachHomeScreen(onPick = { bp ->
-                        coachVm.selectBlueprint(bp)
-                        route = AppRoute.CoachCamera
-                    })
+                    AppRoute.CoachHome -> CoachHomeScreen(
+                        onPick = { bp ->
+                            coachVm.selectBlueprint(bp)
+                            route = AppRoute.CoachCamera
+                        },
+                        onBenchmark = { route = AppRoute.Benchmark },
+                    )
+                    AppRoute.Benchmark -> BenchmarkScreen(
+                        onBack = { route = AppRoute.CoachHome },
+                    )
                     AppRoute.CoachCamera -> CoachCameraScreen(
                         viewModel = coachVm,
                         onComplete = { route = AppRoute.Celebration },
@@ -109,6 +116,7 @@ private sealed interface AppRoute {
     data object Splash : AppRoute
     data object CoachHome : AppRoute
     data object CoachCamera : AppRoute
+    data object Benchmark : AppRoute
     data object Celebration : AppRoute
 }
 

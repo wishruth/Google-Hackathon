@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,11 +23,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -68,6 +75,8 @@ fun CoachPanel(
     onNext: () -> Unit,
     onAsk: () -> Unit,
     onAskQuestion: (String) -> Unit,
+    onGrade: () -> Unit = {},
+    onComplete: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val bp = state.blueprint
@@ -229,6 +238,32 @@ fun CoachPanel(
                 }
             }
 
+            if (state.isLastStep) {
+                Button(
+                    onClick = onComplete,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Accent,
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Filled.Celebration,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "It lit up!",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.W500,
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -244,11 +279,11 @@ fun CoachPanel(
                 FilledIconButton(
                     onClick = onAsk,
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Accent,
-                        contentColor = Color.White,
+                        containerColor = Color(0xFFE6EFEA),
+                        contentColor = PrimaryText,
                     ),
                 ) {
-                    Icon(Icons.Filled.QuestionMark, contentDescription = "Ask coach")
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh coach")
                 }
                 FilledIconButton(
                     onClick = { chatOpen = !chatOpen },
@@ -262,6 +297,24 @@ fun CoachPanel(
                         contentDescription = "Chat with Gemma",
                         modifier = Modifier.size(20.dp),
                     )
+                }
+                Button(
+                    onClick = onGrade,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Accent,
+                        contentColor = Color.White,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.TaskAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Grade", fontSize = 12.sp, fontWeight = FontWeight.W500)
                 }
                 Box(Modifier.weight(1f))
                 IconButton(

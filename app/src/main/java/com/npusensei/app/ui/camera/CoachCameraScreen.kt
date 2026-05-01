@@ -105,13 +105,6 @@ private fun CameraSurface(viewModel: CoachViewModel, onComplete: () -> Unit) {
     var showOverlay by remember { mutableStateOf(true) }
     var showBenchmark by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.circuitComplete) {
-        if (state.circuitComplete) {
-            delay(1500)
-            onComplete()
-        }
-    }
-
     var memoryMb by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(showBenchmark) {
         while (showBenchmark) {
@@ -135,6 +128,21 @@ private fun CameraSurface(viewModel: CoachViewModel, onComplete: () -> Unit) {
                 highlightPx = state.highlightPx,
                 nextStepLabel = state.currentStep?.highlight?.label,
                 modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        if (showBenchmark) {
+            BenchmarkOverlay(
+                yoloMs = yoloMs,
+                yoloFps = yoloFps,
+                gemmaMs = state.coachLatencyMs,
+                gemmaThinking = state.coachThinking,
+                memoryMb = memoryMb,
+                detectionCount = detections.size,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 8.dp),
             )
         }
 
@@ -200,27 +208,14 @@ private fun CameraSurface(viewModel: CoachViewModel, onComplete: () -> Unit) {
             }
         }
 
-        if (showBenchmark) {
-            BenchmarkOverlay(
-                yoloMs = yoloMs,
-                yoloFps = yoloFps,
-                gemmaMs = state.coachLatencyMs,
-                gemmaThinking = state.coachThinking,
-                memoryMb = memoryMb,
-                detectionCount = detections.size,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(start = 12.dp, top = 8.dp),
-            )
-        }
-
         CoachPanel(
             state = state,
             onPrev = viewModel::previousStep,
             onNext = viewModel::nextStep,
             onAsk = { viewModel.askCoach("What should I do right now?") },
             onAskQuestion = { question -> viewModel.askCoach(question) },
+            onGrade = { viewModel.askCoach("Based on what you can see on camera, is the current step complete? Grade my work — tell me if I did this step correctly and if I'm ready to move on to the next step.") },
+            onComplete = onComplete,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
