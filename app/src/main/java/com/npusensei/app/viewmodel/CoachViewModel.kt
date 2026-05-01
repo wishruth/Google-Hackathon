@@ -62,16 +62,24 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         combine(analyzer.liveDetections, _uiState) { dets, ui -> dets to ui }
             .distinctUntilChanged()
             .onEach { (dets, ui) ->
-                val mapper = ui.breadboardMapper ?: return@onEach
-                val bb = dets.firstOrNull { it.label == "breadboard" } ?: return@onEach
-                val step = ui.currentStep ?: return@onEach
-                val highlight = step.highlight ?: return@onEach
+                val mapper = ui.breadboardMapper
+                val bb = dets.firstOrNull { it.label == "breadboard" }
+                val step = ui.currentStep
+                val highlight = step?.highlight
+
+                if (mapper == null || bb == null || highlight == null) {
+                    _uiState.update { it.copy(highlightPx = null, highlightBox = null) }
+                    return@onEach
+                }
+
                 if (highlight.type == "hole" && highlight.row != null && highlight.col != null) {
                     val center = mapper.holeCenter(bb.box, highlight.row, highlight.col)
-                    _uiState.update { it.copy(highlightPx = center) }
+                    _uiState.update { it.copy(highlightPx = center, highlightBox = null) }
                 } else if (highlight.type == "component" && highlight.target != null) {
                     val target = dets.firstOrNull { it.label == highlight.target }
-                    _uiState.update { it.copy(highlightBox = target?.box) }
+                    _uiState.update { it.copy(highlightBox = target?.box, highlightPx = null) }
+                } else {
+                    _uiState.update { it.copy(highlightPx = null, highlightBox = null) }
                 }
             }
             .launchIn(viewModelScope)
@@ -108,6 +116,10 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             lastCoachedStep = -1
             state.copy(stepIndex = next, status = StepStatus.WaitingFor(emptyList()))
         }
+    }
+
+    fun clearHighlights() {
+        _uiState.update { it.copy(highlightPx = null, highlightBox = null) }
     }
 
     fun askCoach(question: String, frame: Bitmap? = null) {
@@ -175,6 +187,9 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             coachMutex.withLock {
                 _uiState.update { it.copy(coachThinking = true) }
                 try {
+                    engine.resetConversation()
+                    engine.startConversation(PromptBuilder.SYSTEM_PROMPT)
+
                     val prompt = PromptBuilder.buildUserPrompt(
                         blueprint, step, status, scene, userQuestion,
                     )

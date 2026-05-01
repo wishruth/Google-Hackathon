@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -105,26 +107,47 @@ private fun CameraSurface(viewModel: CoachViewModel) {
             )
         }
 
-        Surface(
+        Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(top = 8.dp, end = 12.dp),
-            color = Color.Black.copy(alpha = 0.45f),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            IconButton(
-                onClick = { showOverlay = !showOverlay },
-                modifier = Modifier.size(44.dp),
+            Surface(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
             ) {
-                Icon(
-                    imageVector = if (showOverlay) Icons.Filled.Visibility
-                    else Icons.Filled.VisibilityOff,
-                    contentDescription = "Toggle detection overlay",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp),
-                )
+                IconButton(
+                    onClick = { viewModel.clearHighlights() },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Refresh,
+                        contentDescription = "Clear highlights",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Surface(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+            ) {
+                IconButton(
+                    onClick = { showOverlay = !showOverlay },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = if (showOverlay) Icons.Filled.Visibility
+                        else Icons.Filled.VisibilityOff,
+                        contentDescription = "Toggle detection overlay",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
 
