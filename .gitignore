@@ -9,8 +9,7 @@ local.properties
 
 # Gradle files
 .gradle/
-build/
-*/build/
+**/build/
 
 # Android Studio / IntelliJ
 .idea/
@@ -25,9 +24,16 @@ obj/
 # MacOS
 .DS_Store
 
+# Large model files (push to device via adb, don't commit)
+*.litertlm
+
+# Release keystore
+*.keystore
+
 # Misc
 *.class
 *.log
 captures/
 .externalNativeBuild/
 .cxx/
+.cache/
