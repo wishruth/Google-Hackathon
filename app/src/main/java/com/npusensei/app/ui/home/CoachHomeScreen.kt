@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -44,7 +45,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
+fun CoachHomeScreen(
+    onPick: (CircuitBlueprint) -> Unit,
+    onBenchmark: () -> Unit = {},
+) {
     val context = LocalContext.current
     var blueprints by remember { mutableStateOf<List<CircuitBlueprint>>(emptyList()) }
 
@@ -67,8 +71,8 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
                 .padding(top = 48.dp),
         ) {
             AssetLogo(
-                assetName = "logo-transparent.png",
-                modifier = Modifier.size(36.dp),
+                assetName = "logo-text-only-2.png",
+                modifier = Modifier.height(32.dp),
             )
 
             Spacer(Modifier.height(28.dp))
@@ -112,6 +116,59 @@ fun CoachHomeScreen(onPick: (CircuitBlueprint) -> Unit) {
                                 "No blueprints found",
                                 color = Color(0xFFBBBBBB),
                                 fontSize = 14.sp,
+                            )
+                        }
+                    }
+                }
+
+                item { Spacer(Modifier.height(12.dp)) }
+
+                item {
+                    Card(
+                        onClick = onBenchmark,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8)),
+                        border = BorderStroke(1.dp, Color(0xFFECECEC)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Speed,
+                                    contentDescription = null,
+                                    tint = Color(0xFF009E5E),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Column {
+                                    Text(
+                                        "Inference Benchmark",
+                                        fontWeight = FontWeight.W500,
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF1A1A1A),
+                                        letterSpacing = (-0.2).sp,
+                                    )
+                                    Text(
+                                        "YOLO + Gemma Text  vs  Gemma Vision",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF999999),
+                                    )
+                                }
+                            }
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = Color(0xFFCCCCCC),
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }

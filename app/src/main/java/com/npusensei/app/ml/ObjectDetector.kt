@@ -1,11 +1,11 @@
 package com.npusensei.app.ml
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.content.res.AssetManager
 import android.util.Log
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream

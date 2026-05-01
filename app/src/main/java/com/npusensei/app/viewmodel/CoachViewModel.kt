@@ -264,8 +264,6 @@ data class CoachUiState(
     val currentStep: BlueprintStep?
         get() = blueprint?.steps?.getOrNull(stepIndex)
 
-    val circuitComplete: Boolean
-        get() = blueprint != null
-            && stepIndex == blueprint.steps.lastIndex
-            && status == StepStatus.Complete
+    val isLastStep: Boolean
+        get() = blueprint != null && stepIndex == blueprint.steps.lastIndex
 }
