@@ -23,7 +23,10 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "Initializing model: ${config.name}")
             val result = gemmaEngine.initialize(config)
             result.fold(
-                onSuccess = { Log.i(TAG, "Engine ready on ${it.activeBackend} in ${it.initTimeMs}ms") },
+                onSuccess = {
+                    Log.i(TAG, "Engine ready on ${it.activeBackend} in ${it.initTimeMs}ms")
+                    gemmaEngine.startConversation(PromptTemplates.SYSTEM_PROMPT)
+                },
                 onFailure = { Log.e(TAG, "Init failed: ${it.message}") },
             )
         }

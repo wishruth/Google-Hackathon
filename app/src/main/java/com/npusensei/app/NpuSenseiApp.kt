@@ -103,7 +103,8 @@ private fun GemmaResponseScreen(
             return@LaunchedEffect
         }
 
-        engine.sendMessage(prompt)
+        val structuredPrompt = PromptTemplates.textOnlyGuide(prompt)
+        engine.sendMessage(structuredPrompt)
             .onStart { isStreaming = true; responseText = "" }
             .catch { e ->
                 errorMsg = e.message

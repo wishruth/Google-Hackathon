@@ -1,4 +1,4 @@
-package app.npusensei.reasoning
+package com.npusensei.app
 
 /**
  * Prompt templates that shape Gemma 4 E2B responses for NPU Sensei's
