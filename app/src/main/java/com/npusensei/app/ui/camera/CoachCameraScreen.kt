@@ -1,6 +1,7 @@
 package com.npusensei.app.ui.camera
 
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,7 +9,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -16,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -75,20 +87,47 @@ private fun CameraSurface(viewModel: CoachViewModel) {
     val detections by viewModel.analyzer.liveDetections.collectAsStateWithLifecycle()
     val frameSize by viewModel.analyzer.frameSize.collectAsStateWithLifecycle()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showOverlay by remember { mutableStateOf(true) }
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(
             factory = { previewView },
             modifier = Modifier.fillMaxSize(),
         )
-        CoachDetectionOverlay(
-            detections = detections,
-            frameSize = frameSize,
-            highlightBox = state.highlightBox,
-            highlightPx = state.highlightPx,
-            nextStepLabel = state.currentStep?.highlight?.label,
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (showOverlay) {
+            CoachDetectionOverlay(
+                detections = detections,
+                frameSize = frameSize,
+                highlightBox = state.highlightBox,
+                highlightPx = state.highlightPx,
+                nextStepLabel = state.currentStep?.highlight?.label,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 12.dp),
+            color = Color.Black.copy(alpha = 0.45f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        ) {
+            IconButton(
+                onClick = { showOverlay = !showOverlay },
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = if (showOverlay) Icons.Filled.Visibility
+                    else Icons.Filled.VisibilityOff,
+                    contentDescription = "Toggle detection overlay",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+
         CoachPanel(
             state = state,
             onPrev = viewModel::previousStep,
