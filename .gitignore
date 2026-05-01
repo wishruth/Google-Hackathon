@@ -27,6 +27,9 @@ obj/
 # Large model files (push to device via adb, don't commit)
 *.litertlm
 
+# Release keystore
+*.keystore
+
 # Misc
 *.class
 *.log
