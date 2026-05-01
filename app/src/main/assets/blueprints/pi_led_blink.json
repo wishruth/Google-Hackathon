@@ -1,0 +1,67 @@
+{
+  "id": "pi_led_blink",
+  "title": "Raspberry Pi — Blink an LED",
+  "summary": "The classic first GPIO project. Wire a red LED through a 330 Ω resistor to GPIO17 and ground, then run a 10-line Python script.",
+  "estimated_minutes": 8,
+  "difficulty": "beginner",
+  "bill_of_materials": [
+    { "id": "raspberry_pi", "label": "Raspberry Pi (any model with 40-pin header)", "qty": 1 },
+    { "id": "gpio_breakout", "label": "T-type GPIO breakout (cobbler)", "qty": 1 },
+    { "id": "ribbon_cable", "label": "40-pin flat ribbon cable", "qty": 1 },
+    { "id": "breadboard", "label": "Half-size breadboard (400-tie-point)", "qty": 1 },
+    { "id": "red_led", "label": "Red LED (5 mm)", "qty": 1 },
+    { "id": "resistor", "label": "330 Ω resistor (orange-orange-brown-gold)", "qty": 1, "value_ohms": 330 }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Place the breadboard flat in front of you. Make sure the side with row 1 is on your left.",
+      "requires_visible": ["breadboard"],
+      "highlight": { "type": "component", "target": "breadboard" }
+    },
+    {
+      "n": 2,
+      "instruction": "Push the T-cobbler GPIO breakout into the breadboard so its pins straddle the center gap. The 'GPIO' label should face you.",
+      "requires_visible": ["breadboard", "gpio_breakout"],
+      "highlight": { "type": "component", "target": "gpio_breakout" }
+    },
+    {
+      "n": 3,
+      "instruction": "Connect the ribbon cable from the T-cobbler to the Pi's 40-pin GPIO header. Match the red stripe to pin 1 (next to the SD card slot).",
+      "requires_visible": ["raspberry_pi", "ribbon_cable", "gpio_breakout"],
+      "highlight": { "type": "component", "target": "ribbon_cable" }
+    },
+    {
+      "n": 4,
+      "instruction": "Place the 330 Ω resistor (orange-orange-brown bands) so one leg sits in the same row as the GPIO17 pin, and the other leg crosses to a free row further down.",
+      "requires_visible": ["breadboard", "resistor"],
+      "highlight": { "type": "hole", "row": 17, "col": "f", "label": "GPIO17 row" },
+      "expected_resistor_ohms": 330,
+      "tolerance_pct": 10
+    },
+    {
+      "n": 5,
+      "instruction": "Insert the LED. The LONG leg (anode, +) goes in the same row as the resistor's far leg. The SHORT leg (cathode, −) goes in a separate row.",
+      "requires_visible": ["breadboard", "red_led", "resistor"],
+      "highlight": { "type": "hole", "row": 25, "col": "f", "label": "LED anode" }
+    },
+    {
+      "n": 6,
+      "instruction": "Run a jumper from the LED's short leg row to any GND pin on the T-cobbler.",
+      "requires_visible": ["breadboard", "red_led", "gpio_breakout"],
+      "highlight": { "type": "hole", "row": 25, "col": "j", "label": "GND rail" }
+    },
+    {
+      "n": 7,
+      "instruction": "Power on the Pi. On the Pi terminal run: gpio -g mode 17 out && gpio -g write 17 1. The LED should light.",
+      "requires_visible": ["raspberry_pi", "red_led"],
+      "highlight": { "type": "component", "target": "red_led" },
+      "verify": "led_lit"
+    }
+  ],
+  "breadboard_geometry": {
+    "rows": 30,
+    "cols": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+    "power_rails": ["+", "-"]
+  }
+}
