@@ -32,6 +32,15 @@ class FrameAnalyzer(
     private val _scene = MutableStateFlow(SceneState.EMPTY)
     val scene: StateFlow<SceneState> = _scene.asStateFlow()
 
+    private val _yoloLatencyMs = MutableStateFlow(0L)
+    val yoloLatencyMs: StateFlow<Long> = _yoloLatencyMs.asStateFlow()
+
+    private val _yoloFps = MutableStateFlow(0f)
+    val yoloFps: StateFlow<Float> = _yoloFps.asStateFlow()
+
+    private var fpsFrames = 0
+    private var fpsWindowStart = System.currentTimeMillis()
+
     @Volatile var paused: Boolean = false
 
     override fun analyze(image: ImageProxy) {
@@ -46,7 +55,16 @@ class FrameAnalyzer(
             val t0 = System.currentTimeMillis()
             val detections = detector.detect(bitmap)
             val tDetect = System.currentTimeMillis() - t0
+            _yoloLatencyMs.value = tDetect
             _liveDetections.value = detections
+
+            fpsFrames++
+            val elapsed = System.currentTimeMillis() - fpsWindowStart
+            if (elapsed >= 1000) {
+                _yoloFps.value = fpsFrames * 1000f / elapsed
+                fpsFrames = 0
+                fpsWindowStart = System.currentTimeMillis()
+            }
 
             val newScene = SceneState(
                 detections = detections,
