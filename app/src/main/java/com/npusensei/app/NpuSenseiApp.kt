@@ -1,13 +1,19 @@
 package com.npusensei.app
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -36,479 +43,569 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
+import java.io.File
+import java.util.Locale
+import java.util.concurrent.Executors
 
-private sealed class AppScreen {
-    data object Loading : AppScreen()
-    data object Home : AppScreen()
-    data class Response(val prompt: String) : AppScreen()
+private val AccentGreen = Color(0xFF00FF88)
+private val ErrorRed = Color(0xFFFF6B6B)
+private val MutedText = Color.White.copy(alpha = 0.62f)
+private val AskBlue = Color(0xFF64B5F6)
+
+// ── App State ────────────────────────────────────────────────────────────
+
+private sealed class AppPhase {
+    data object Camera : AppPhase()
+    data object Planning : AppPhase()
+    data class PlanReady(val plan: String, val steps: List<String>) : AppPhase()
+    data class Guided(val steps: List<CircuitStep>) : AppPhase()
+    data object Complete : AppPhase()
 }
+
+// ── Main Entry ───────────────────────────────────────────────────────────
 
 @Composable
 fun NpuSenseiApp(gemmaEngine: GemmaReasoningEngine) {
-    var screen: AppScreen by remember { mutableStateOf(AppScreen.Loading) }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
+    var phase: AppPhase by remember { mutableStateOf(AppPhase.Camera) }
+    var prompt by remember { mutableStateOf("") }
+    var planText by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var cameraBindKey by remember { mutableStateOf(0) }
+    var imageCapture by remember { mutableStateOf(ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()) }
+
+    val captureExecutor = remember { Executors.newSingleThreadExecutor() }
+    val previewView = remember {
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
+    }
+
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasCameraPermission = granted
+    }
+
+    // Speech recognition
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull() ?: ""
+            if (spoken.isNotBlank()) {
+                prompt = spoken
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
-        delay(1450)
-        screen = AppScreen.Home
-    }
-
-    when (val current = screen) {
-        AppScreen.Loading -> NpuSenseiLoadingScreen()
-        AppScreen.Home -> NpuSenseiHomeScreen(
-            onSubmit = { prompt -> screen = AppScreen.Response(prompt) },
-        )
-        is AppScreen.Response -> GemmaResponseScreen(
-            prompt = current.prompt,
-            engine = gemmaEngine,
-            onBack = { screen = AppScreen.Home },
-        )
-    }
-}
-
-// ── Gemma Response Screen ───────────────────────────────────────────────
-
-@Composable
-private fun GemmaResponseScreen(
-    prompt: String,
-    engine: GemmaReasoningEngine,
-    onBack: () -> Unit,
-) {
-    var responseText by remember { mutableStateOf("") }
-    var isStreaming by remember { mutableStateOf(false) }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
-    val scrollState = rememberScrollState()
-
-    LaunchedEffect(prompt) {
-        if (!engine.initialized) {
-            errorMsg = "Engine not ready yet — wait a moment and try again"
-            return@LaunchedEffect
+        if (!hasCameraPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
         }
-
-        val structuredPrompt = PromptTemplates.textOnlyGuide(prompt)
-        engine.sendMessage(structuredPrompt)
-            .onStart { isStreaming = true; responseText = "" }
-            .catch { e ->
-                errorMsg = e.message
-                isStreaming = false
-            }
-            .onCompletion { isStreaming = false }
-            .collect { chunk ->
-                responseText += chunk
-            }
     }
 
-    LaunchedEffect(responseText) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+    LaunchedEffect(hasCameraPermission, cameraBindKey) {
+        if (!hasCameraPermission) return@LaunchedEffect
+        val cameraProvider = ProcessCameraProvider.getInstance(context).get()
+        val newImageCapture = ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(
+            lifecycleOwner,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            preview,
+            newImageCapture,
+        )
+        imageCapture = newImageCapture
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .premiumBackground(),
-    ) {
-        CircuitBackground(alpha = 0.05f)
+    fun submitPrompt() {
+        if (prompt.isBlank()) return
+        val userPrompt = prompt.trim()
+        phase = AppPhase.Planning
+        planText = ""
+        errorMsg = null
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("NPU-Sensei", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Button(
-                    onClick = {
-                        engine.resetConversation()
-                        onBack()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.08f),
-                        contentColor = Color.White,
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Text("New Chat", fontSize = 13.sp)
-                }
-            }
+        val outputFile = File(context.cacheDir, "plan_capture.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
 
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                color = AccentGreen.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.18f)),
-            ) {
-                Text(
-                    text = prompt,
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(14.dp),
-                )
-            }
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(top = 12.dp),
-                color = SurfaceGlass,
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
-            ) {
-                Box(modifier = Modifier.padding(16.dp)) {
-                    if (errorMsg != null) {
-                        Text(
-                            text = "Error: $errorMsg",
-                            color = Color(0xFFFF6B6B),
-                            fontSize = 14.sp,
-                        )
-                    } else if (responseText.isEmpty() && isStreaming) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = AccentGreen,
-                                strokeWidth = 2.dp,
-                            )
-                            Text("Thinking...", color = MutedText, fontSize = 14.sp)
-                        }
-                    } else {
-                        Column {
-                            Text(
-                                text = responseText,
-                                color = Color.White.copy(alpha = 0.92f),
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp,
-                                modifier = Modifier.verticalScroll(scrollState),
-                            )
-                            if (isStreaming) {
-                                Text("...", color = AccentGreen, fontSize = 15.sp)
-                            }
+        imageCapture.takePicture(
+            outputOptions,
+            captureExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    scope.launch {
+                        val planPrompt = buildPlanPrompt(userPrompt)
+                        val chunks = mutableListOf<String>()
+                        try {
+                            gemmaEngine.sendImageMessage(planPrompt, outputFile.absolutePath)
+                                .catch { e -> chunks.add("Error: ${e.message}") }
+                                .collect { chunk ->
+                                    chunks.add(chunk)
+                                    planText = chunks.joinToString("")
+                                }
+                            val fullPlan = chunks.joinToString("")
+                            val steps = parsePlanSteps(fullPlan)
+                            phase = AppPhase.PlanReady(fullPlan, steps)
+                        } catch (e: Exception) {
+                            errorMsg = e.message ?: "Failed to generate plan"
+                            phase = AppPhase.Camera
                         }
                     }
                 }
+
+                override fun onError(exception: ImageCaptureException) {
+                    errorMsg = "Camera capture failed: ${exception.message}"
+                    phase = AppPhase.Camera
+                }
+            },
+        )
+    }
+
+    fun launchVoice() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "What do you want to build?")
+        }
+        speechLauncher.launch(intent)
+    }
+
+    // ── UI ────────────────────────────────────────────────────────────────
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Camera visible only during non-guided phases
+        if (phase !is AppPhase.Guided) {
+            if (hasCameraPermission) {
+                AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Camera permission required", color = Color.White)
+                }
+            }
+        }
+
+        when (phase) {
+            AppPhase.Camera -> {
+                // Top branding
+                Surface(
+                    color = Color.Black.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 12.dp),
+                ) {
+                    Text(
+                        text = "NPU-Sensei",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+
+                // Bottom prompt input
+                PromptInput(
+                    prompt = prompt,
+                    onPromptChange = { prompt = it },
+                    onSubmit = { submitPrompt() },
+                    onMic = { launchVoice() },
+                    errorMsg = errorMsg,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                )
+            }
+
+            AppPhase.Planning -> {
+                // Dimmed overlay while planning
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.7f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PlanningOverlay(planText = planText)
+                }
+            }
+
+            is AppPhase.PlanReady -> {
+                val planReady = phase as AppPhase.PlanReady
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PlanReadyOverlay(
+                        plan = planReady.plan,
+                        onConfirm = {
+                            val circuitSteps = planReady.steps.mapIndexed { idx, text ->
+                                CircuitStep(
+                                    id = idx + 1,
+                                    instruction = text,
+                                    detail = "",
+                                    verificationPrompt = "Step: \"$text\". " +
+                                        "Look at the image. Can you see the components or progress " +
+                                        "related to this step? If the relevant parts are visible in " +
+                                        "the image, answer YES. Only answer NO if nothing related " +
+                                        "to this step is visible at all. " +
+                                        "Answer YES or NO, then describe what you see in one sentence.",
+                                )
+                            }
+                            phase = AppPhase.Guided(circuitSteps)
+                        },
+                        onCancel = {
+                            phase = AppPhase.Camera
+                        },
+                    )
+                }
+            }
+
+            is AppPhase.Guided -> {
+                val guided = phase as AppPhase.Guided
+                GuidedCircuitScreen(
+                    engine = gemmaEngine,
+                    steps = guided.steps,
+                    onFinished = { phase = AppPhase.Complete; cameraBindKey++ },
+                    onBack = { phase = AppPhase.Camera; prompt = ""; cameraBindKey++ },
+                )
+            }
+
+            AppPhase.Complete -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CompleteOverlay(onDone = { phase = AppPhase.Camera; prompt = ""; cameraBindKey++ })
+                }
             }
         }
     }
 }
 
-// ── Loading Screen ──────────────────────────────────────────────────────
+// ── Prompt Input ─────────────────────────────────────────────────────────
 
 @Composable
-private fun NpuSenseiLoadingScreen() {
-    val pulse = remember { Animatable(0f) }
+private fun PromptInput(
+    prompt: String,
+    onPromptChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onMic: () -> Unit,
+    errorMsg: String?,
+    modifier: Modifier = Modifier,
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    LaunchedEffect(Unit) {
-        pulse.animateTo(
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 950, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-        )
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .premiumBackground(),
-        contentAlignment = Alignment.Center,
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.Black.copy(alpha = 0.78f),
+        shape = RoundedCornerShape(24.dp),
+        shadowElevation = 12.dp,
     ) {
-        CircuitBackground(alpha = 0.075f)
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Surface(
-                color = SurfaceGlass,
-                shape = RoundedCornerShape(32.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                shadowElevation = 18.dp,
-            ) {
-                Canvas(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .size(76.dp),
-                ) {
-                    drawCircle(
-                        color = AccentGreen.copy(alpha = 0.09f + pulse.value * 0.10f),
-                        radius = 31.dp.toPx() + pulse.value * 5.dp.toPx(),
-                    )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.88f),
-                        radius = 25.dp.toPx(),
-                        style = Stroke(width = 2.dp.toPx()),
-                    )
-                    drawLine(
-                        color = AccentGreen,
-                        start = Offset(size.width * 0.32f, size.height * 0.50f),
-                        end = Offset(size.width * 0.68f, size.height * 0.50f),
-                        strokeWidth = 3.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                    drawLine(
-                        color = AccentGreen,
-                        start = Offset(size.width * 0.50f, size.height * 0.32f),
-                        end = Offset(size.width * 0.50f, size.height * 0.68f),
-                        strokeWidth = 3.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                }
-            }
             Text(
-                text = "NPU-Sensei",
+                text = "What do you want to build?",
                 color = Color.White,
-                fontSize = 32.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Preparing your AR hardware mentor",
+                text = "Point the camera at your components, then tell me your goal.",
                 color = MutedText,
-                fontSize = 15.sp,
+                fontSize = 13.sp,
             )
-        }
-    }
-}
 
-// ── Home Screen ─────────────────────────────────────────────────────────
+            if (errorMsg != null) {
+                Text(text = errorMsg, color = ErrorRed, fontSize = 12.sp)
+            }
 
-@Composable
-private fun NpuSenseiHomeScreen(onSubmit: (String) -> Unit) {
-    var prompt by remember { mutableStateOf("") }
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val canStart = prompt.trim().isNotEmpty()
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .premiumBackground(),
-    ) {
-        CircuitBackground(alpha = 0.085f)
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = 22.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "NPU-Sensei",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = onPromptChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("e.g. Build an LED circuit with a resistor") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = AccentGreen,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        cursorColor = AccentGreen,
+                        focusedPlaceholderColor = Color.White.copy(alpha = 0.35f),
+                        unfocusedPlaceholderColor = Color.White.copy(alpha = 0.35f),
+                        focusedContainerColor = Color.White.copy(alpha = 0.04f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(
+                        onGo = {
+                            keyboardController?.hide()
+                            onSubmit()
+                        },
+                    ),
                 )
-                Surface(
-                    color = Color.White.copy(alpha = 0.06f),
+                Button(
+                    onClick = onMic,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AskBlue.copy(alpha = 0.8f),
+                        contentColor = Color.White,
+                    ),
                     shape = CircleShape,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+                    modifier = Modifier.size(48.dp),
                 ) {
-                    Text(
-                        text = "Guided AR",
-                        color = Color.White.copy(alpha = 0.86f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
+                    Text("🎤", fontSize = 18.sp)
                 }
             }
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-                modifier = Modifier.fillMaxWidth(),
+            Button(
+                onClick = {
+                    keyboardController?.hide()
+                    onSubmit()
+                },
+                enabled = prompt.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AccentGreen,
+                    contentColor = Color(0xFF001F12),
+                    disabledContainerColor = Color.White.copy(alpha = 0.08f),
+                    disabledContentColor = Color.White.copy(alpha = 0.3f),
+                ),
             ) {
-                CircuitHeroMark()
-                Text(
-                    text = "What are you building?",
-                    color = Color.White,
-                    fontSize = 34.sp,
-                    lineHeight = 39.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
+                Text("Plan My Build", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+        }
+    }
+}
+
+// ── Planning Overlay (streaming) ─────────────────────────────────────────
+
+@Composable
+private fun PlanningOverlay(planText: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+        color = Color(0xF0101418),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = AccentGreen,
+                    strokeWidth = 2.5.dp,
                 )
                 Text(
-                    text = "Describe your Raspberry Pi wiring task. I'll turn it into camera-guided steps.",
-                    color = MutedText,
+                    "Creating your build plan...",
+                    color = AccentGreen,
                     fontSize = 16.sp,
-                    lineHeight = 23.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 14.dp),
+                    fontWeight = FontWeight.Bold,
                 )
             }
+
+            if (planText.isNotEmpty()) {
+                Text(
+                    text = planText,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .height(300.dp),
+                )
+            } else {
+                Text(
+                    "Analyzing your workspace and components...",
+                    color = MutedText,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+    }
+}
+
+// ── Plan Ready Overlay ───────────────────────────────────────────────────
+
+@Composable
+private fun PlanReadyOverlay(
+    plan: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        color = Color(0xF0101418),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Your Build Plan", color = AccentGreen, fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
             Surface(
-                color = SurfaceGlass,
-                shape = RoundedCornerShape(30.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.09f)),
-                shadowElevation = 16.dp,
+                color = Color.White.copy(alpha = 0.04f),
+                shape = RoundedCornerShape(14.dp),
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                Text(
+                    text = plan,
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier
+                        .padding(14.dp)
+                        .verticalScroll(rememberScrollState())
+                        .height(280.dp),
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(0.5f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        contentColor = Color.White,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                 ) {
-                    OutlinedTextField(
-                        value = prompt,
-                        onValueChange = { prompt = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Ask about a circuit, sensor, or GPIO wiring...") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(20.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = AccentGreen,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.10f),
-                            cursorColor = AccentGreen,
-                            focusedPlaceholderColor = Color.White.copy(alpha = 0.38f),
-                            unfocusedPlaceholderColor = Color.White.copy(alpha = 0.38f),
-                            focusedContainerColor = Color.White.copy(alpha = 0.045f),
-                            unfocusedContainerColor = Color.White.copy(alpha = 0.045f),
-                        ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(
-                            onGo = {
-                                if (canStart) {
-                                    keyboardController?.hide()
-                                    onSubmit(prompt.trim())
-                                }
-                            },
-                        ),
-                    )
-                    Button(
-                        onClick = {
-                            keyboardController?.hide()
-                            onSubmit(prompt.trim())
-                        },
-                        enabled = canStart,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentGreen,
-                            contentColor = Color(0xFF001F12),
-                            disabledContainerColor = Color.White.copy(alpha = 0.08f),
-                            disabledContentColor = Color.White.copy(alpha = 0.32f),
-                        ),
-                    ) {
-                        Text(
-                            text = "Ask NPU Sensei",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                        )
-                    }
+                    Text("Redo", modifier = Modifier.padding(vertical = 4.dp))
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentGreen,
+                        contentColor = Color(0xFF001F12),
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("Start Building", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
                 }
             }
         }
     }
 }
 
-// ── Decorative components ───────────────────────────────────────────────
+// ── Complete Overlay ─────────────────────────────────────────────────────
 
 @Composable
-private fun CircuitHeroMark() {
-    Box(
+private fun CompleteOverlay(onDone: () -> Unit) {
+    Surface(
         modifier = Modifier
-            .size(132.dp)
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(36.dp))
-            .background(SurfaceGlass, RoundedCornerShape(36.dp)),
-        contentAlignment = Alignment.Center,
+            .fillMaxWidth()
+            .padding(32.dp),
+        color = Color(0xF0101418),
+        shape = RoundedCornerShape(28.dp),
     ) {
-        Canvas(modifier = Modifier.size(84.dp)) {
-            val stroke = 3.dp.toPx()
-            val pad = 11.dp.toPx()
-            drawRoundRect(
-                color = Color.White.copy(alpha = 0.88f),
-                topLeft = Offset(pad, pad),
-                size = Size(size.width - pad * 2, size.height - pad * 2),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx(), 16.dp.toPx()),
-                style = Stroke(width = stroke),
+        Column(
+            modifier = Modifier.padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Done!", fontSize = 48.sp)
+            Text(
+                "Your circuit is built. Connect power and test it out.",
+                color = Color.White,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
             )
-            repeat(4) { index ->
-                val y = pad + 16.dp.toPx() + index * 15.dp.toPx()
-                drawLine(AccentGreen.copy(alpha = 0.82f), Offset(0f, y), Offset(pad, y), stroke, StrokeCap.Round)
-                drawLine(AccentGreen.copy(alpha = 0.82f), Offset(size.width - pad, y), Offset(size.width, y), stroke, StrokeCap.Round)
+            Button(
+                onClick = onDone,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AccentGreen,
+                    contentColor = Color(0xFF001F12),
+                ),
+            ) {
+                Text("Build Something Else", fontWeight = FontWeight.Bold)
             }
-            repeat(3) { index ->
-                val x = pad + 20.dp.toPx() + index * 17.dp.toPx()
-                drawLine(AccentGreen.copy(alpha = 0.82f), Offset(x, 0f), Offset(x, pad), stroke, StrokeCap.Round)
-                drawLine(AccentGreen.copy(alpha = 0.82f), Offset(x, size.height - pad), Offset(x, size.height), stroke, StrokeCap.Round)
-            }
-            drawCircle(AccentGreen, 6.dp.toPx(), Offset(size.width / 2f, size.height / 2f))
         }
     }
 }
 
-@Composable
-private fun CircuitBackground(alpha: Float) {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val lineColor = AccentGreen.copy(alpha = alpha)
-        val nodeColor = AccentGreen.copy(alpha = alpha + 0.05f)
-        val nodes = listOf(
-            Offset(size.width * 0.18f, size.height * 0.18f),
-            Offset(size.width * 0.82f, size.height * 0.24f),
-            Offset(size.width * 0.26f, size.height * 0.72f),
-            Offset(size.width * 0.74f, size.height * 0.78f),
-        )
-        nodes.forEach { node ->
-            drawCircle(nodeColor, 3.5.dp.toPx(), node)
-            drawCircle(lineColor, 11.dp.toPx(), node, style = Stroke(width = 1.dp.toPx()))
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+private fun buildPlanPrompt(userGoal: String): String =
+    "The user wants to: $userGoal\n\n" +
+        "Look at the image of their workspace. Identify visible components.\n" +
+        "Then create a numbered step-by-step build plan using those components.\n\n" +
+        "Rules:\n" +
+        "- Do NOT state how many steps there are. Just list them.\n" +
+        "- One sentence per step.\n" +
+        "- Be direct and specific.\n" +
+        "- NEVER say 'refer to a manual' or 'consult a datasheet'.\n\n" +
+        "Format:\n" +
+        "COMPONENTS: [list what you see]\n" +
+        "PLAN:\n" +
+        "1. [step]\n" +
+        "2. [step]\n" +
+        "..."
+
+private fun parsePlanSteps(plan: String): List<String> {
+    val lines = plan.lines()
+    val steps = mutableListOf<String>()
+    val stepPattern = Regex("""^\s*(\d+)[.)]\s*(.+)""")
+    for (line in lines) {
+        val match = stepPattern.find(line)
+        if (match != null) {
+            steps.add(match.groupValues[2].trim())
         }
-        drawLine(lineColor, nodes[0], nodes[1], 1.2.dp.toPx(), StrokeCap.Round)
-        drawLine(lineColor, nodes[2], nodes[3], 1.2.dp.toPx(), StrokeCap.Round)
-        drawLine(lineColor.copy(alpha = alpha * 0.65f), nodes[0], nodes[2], 1.dp.toPx(), StrokeCap.Round)
-        drawLine(lineColor.copy(alpha = alpha * 0.65f), nodes[1], nodes[3], 1.dp.toPx(), StrokeCap.Round)
-        drawCircle(
-            color = AccentGreen.copy(alpha = 0.06f),
-            radius = size.minDimension * 0.42f,
-            center = Offset(size.width * 0.50f, size.height * 0.42f),
-        )
     }
+    if (steps.isEmpty()) {
+        steps.add("Follow the plan above")
+    }
+    return steps
 }
-
-private fun Modifier.premiumBackground(): Modifier {
-    return background(
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xFF0B0F12),
-                Color(0xFF050708),
-                Color(0xFF020303),
-            ),
-        ),
-    )
-}
-
-private val SurfaceGlass = Color(0xFF11181C).copy(alpha = 0.72f)
-private val MutedText = Color.White.copy(alpha = 0.62f)
-private val AccentGreen = Color(0xFF00FF88)

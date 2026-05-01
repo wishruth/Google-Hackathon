@@ -35,6 +35,7 @@ class GemmaReasoningEngine(private val context: Context) {
     private var conversation: Conversation? = null
     private var isInitialized = false
     private var activeBackend: String = "Unknown"
+    private var activeModelId: String? = null
     private var nativeRuntimeConfigured = false
 
     val initialized: Boolean get() = isInitialized
@@ -64,6 +65,7 @@ class GemmaReasoningEngine(private val context: Context) {
             initEngineWithFallback(modelPath, backends, modelConfig)
             val elapsed = System.currentTimeMillis() - startTime
             isInitialized = true
+            activeModelId = modelConfig.id
             Log.i(TAG, "Engine ready on $activeBackend in ${elapsed}ms")
             Result.success(InferenceMetrics(initTimeMs = elapsed, activeBackend = activeBackend))
         } catch (e: Throwable) {
@@ -217,7 +219,10 @@ class GemmaReasoningEngine(private val context: Context) {
 
     private fun ensureConversation() {
         requireEngine()
-        if (conversation == null) startConversation()
+        if (conversation == null) {
+            val config = GemmaModelConfig.ALL.firstOrNull { it.id == activeModelId }
+            startConversation(systemPrompt = config?.defaultSystemPrompt)
+        }
     }
 
     private fun Message.extractText(): String =
