@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -102,7 +103,8 @@ private fun CameraSurface(viewModel: CoachViewModel, onComplete: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val yoloMs by viewModel.analyzer.yoloLatencyMs.collectAsStateWithLifecycle()
     val yoloFps by viewModel.analyzer.yoloFps.collectAsStateWithLifecycle()
-    var showOverlay by remember { mutableStateOf(true) }
+    var showOverlay by remember { mutableStateOf(false) }
+    var showArOverlay by remember { mutableStateOf(true) }
     var showBenchmark by remember { mutableStateOf(false) }
 
     var memoryMb by remember { mutableFloatStateOf(0f) }
@@ -120,6 +122,14 @@ private fun CameraSurface(viewModel: CoachViewModel, onComplete: () -> Unit) {
             factory = { previewView },
             modifier = Modifier.fillMaxSize(),
         )
+        if (showArOverlay) {
+            ArOverlay(
+                detections = detections,
+                requiredLabels = state.currentStep?.requiresVisible ?: emptyList(),
+                frameSize = frameSize,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         if (showOverlay) {
             CoachDetectionOverlay(
                 detections = detections,
@@ -166,6 +176,24 @@ private fun CameraSurface(viewModel: CoachViewModel, onComplete: () -> Unit) {
                     Icon(
                         Icons.Filled.Analytics,
                         contentDescription = "Toggle benchmark",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Surface(
+                color = if (showArOverlay) Color(0xFF00C853).copy(alpha = 0.7f)
+                else Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+            ) {
+                IconButton(
+                    onClick = { showArOverlay = !showArOverlay },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Layers,
+                        contentDescription = "Toggle AR overlay",
                         tint = Color.White,
                         modifier = Modifier.size(22.dp),
                     )
