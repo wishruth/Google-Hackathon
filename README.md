@@ -206,8 +206,8 @@ Open **Amped** from your app drawer. The splash screen will show while Gemma ini
 ---
 
 ## Team
-
-Built for the Google Hackathon 2025.
+Gandharva Naveen, Mohamed Farghally, Shaan Patel, Surya Jagarlamudi, Vishruth Narasimhan
+Built for the Google X Qualcomm Hackathon 2026.
 
 ---
 
